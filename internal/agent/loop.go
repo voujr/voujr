@@ -45,6 +45,7 @@ func (a *Agent) runLoop(ctx context.Context, userMsg string, emit Emit) (string,
 		}
 		a.spent += usage.CostCents
 		a.history = append(a.history, assistant)
+		a.record(ctx, assistant)
 
 		// 3. no tool calls → the turn is complete
 		if len(assistant.ToolCalls) == 0 {
@@ -57,12 +58,14 @@ func (a *Agent) runLoop(ctx context.Context, userMsg string, emit Emit) (string,
 			emit(Event{Kind: EventToolStart, Tool: tc.Name})
 			obs := a.dispatch(ctx, tc)
 			emit(Event{Kind: EventToolDone, Tool: tc.Name, Text: obs.summary, Err: obs.err})
-			a.history = append(a.history, ai.Message{
+			toolMsg := ai.Message{
 				Role:       ai.RoleTool,
 				ToolCallID: tc.ID,
 				Name:       tc.Name,
 				Content:    obs.view,
-			})
+			}
+			a.history = append(a.history, toolMsg)
+			a.record(ctx, toolMsg)
 		}
 		// 5. loop: feed observations back to the model for the next reasoning step
 	}

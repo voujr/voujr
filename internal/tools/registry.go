@@ -55,17 +55,18 @@ type AuditSink interface {
 
 // AuditEntry is one row in the append-only, hash-chained audit log.
 type AuditEntry struct {
-	When     time.Time
-	Tool     string
-	Cluster  string
-	Risk     RiskLevel
-	Args     RawArgs
-	Diff     string
-	Approver string
-	DryRun   bool
-	Status   string // "ok" | "error" | "denied" | "rejected"
-	Summary  string
-	Duration time.Duration
+	When      time.Time
+	SessionID string
+	Tool      string
+	Cluster   string
+	Risk      RiskLevel
+	Args      RawArgs
+	Diff      string
+	Approver  string
+	DryRun    bool
+	Status    string // "ok" | "error" | "denied" | "rejected"
+	Summary   string
+	Duration  time.Duration
 }
 
 // Redactor strips secret-shaped content before it is logged or returned to the
@@ -76,6 +77,7 @@ type Redactor interface {
 
 // SessionPolicy is the per-session execution context for a dispatch.
 type SessionPolicy struct {
+	SessionID   string   // persistence key for tool_executions / audit_log
 	Mode        string   // "read-only" | "propose" | "apply"
 	Enabled     []string // allow-list; empty = all read tools
 	Cluster     string
@@ -244,7 +246,7 @@ func (reg *Registry) record(ctx context.Context, t Tool, sp SessionPolicy, args 
 		return
 	}
 	_ = reg.audit.Record(ctx, AuditEntry{
-		When: time.Now(), Tool: t.Name(), Cluster: sp.Cluster, Risk: t.Risk(),
+		When: time.Now(), SessionID: sp.SessionID, Tool: t.Name(), Cluster: sp.Cluster, Risk: t.Risk(),
 		Args: args, Diff: diff, Approver: approver, DryRun: dryRun,
 		Status: status, Summary: summary, Duration: d,
 	})

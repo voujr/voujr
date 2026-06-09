@@ -53,6 +53,10 @@ type Agent struct {
 	maxSteps int
 	spent    float64 // cumulative cost cents this session
 	budget   int
+
+	// persist, if set, durably records each conversation message (user,
+	// assistant, tool). It is best-effort: a storage error never aborts a turn.
+	persist func(context.Context, ai.Message) error
 }
 
 // Config wires an Agent.
@@ -64,6 +68,8 @@ type Config struct {
 	Session     tools.SessionPolicy
 	MaxSteps    int
 	BudgetCents int
+	// Persist durably records each conversation message; nil disables persistence.
+	Persist func(context.Context, ai.Message) error
 }
 
 // New builds an Agent seeded with the system prompt.
@@ -79,9 +85,19 @@ func New(c Config) *Agent {
 		sp:       c.Session,
 		maxSteps: c.MaxSteps,
 		budget:   c.BudgetCents,
+		persist:  c.Persist,
 	}
 	a.history = []ai.Message{{Role: ai.RoleSystem, Content: systemPreamble}}
 	return a
+}
+
+// record durably saves a message if persistence is configured. Best-effort:
+// storage failures are swallowed so a DB hiccup never breaks the conversation.
+func (a *Agent) record(ctx context.Context, m ai.Message) {
+	if a.persist == nil {
+		return
+	}
+	_ = a.persist(ctx, m)
 }
 
 // History returns the conversation so far (for persistence/resume).

@@ -60,6 +60,9 @@ func (a *Agent) assemble(ctx context.Context, userMsg string) {
 	}
 	user := ai.Message{Role: ai.RoleUser, Content: userMsg}
 	a.history = append(a.history, card, user)
+	// Persist the real user message; the context card is ephemeral grounding
+	// (re-derived live each turn) and is deliberately not stored.
+	a.record(ctx, user)
 }
 
 // estTokens is a cheap heuristic (~4 chars/token) for routing decisions.
