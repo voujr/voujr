@@ -1,0 +1,37 @@
+# Example voujr configuration. Copy to ./voujr.yaml or
+# ~/.voujr/config.yaml. Flags and env vars override these values.
+# API keys are NEVER put here — set PORTKEY_API_KEY / ANTHROPIC_API_KEY / etc.
+
+context: ""            # kube-context; empty = current-context
+mode: read-only        # read-only | propose | apply
+data_dir: ~/.voujr
+
+ai:
+  gateway: portkey     # portkey | direct
+  base_url: ""         # override for self-hosted Portkey
+  default_provider: anthropic
+  budget_cents: 0      # per-session spend cap; 0 = unlimited
+  timeout: 90s
+  tiers:               # routing tier -> model ref ("provider/model")
+    fast: anthropic/claude-haiku-4-5
+    reasoning: anthropic/claude-opus-4-8
+    long: gemini/gemini-2.5-pro
+
+audit:
+  enabled: true
+  interval: 0          # 0 = on-demand; e.g. 15m for continuous scans
+  disabled_rules: []   # e.g. ["reliability.missing_liveness_probe"]
+
+tools:
+  enabled: []          # allow-list; empty = all read tools
+  auto_approve: []     # low-risk classes to auto-approve in apply mode, e.g. ["scale"]
+  mcp_servers: []      # external MCP servers to mount as tools
+
+observability:
+  metrics_addr: ""     # e.g. ":9090"; empty disables /metrics
+  otlp_endpoint: ""
+  log_level: info
+
+incident:
+  escalate_at_or_above: P1   # P0 | P1
+  # slack_webhook / pagerduty_key are read from env, not stored here

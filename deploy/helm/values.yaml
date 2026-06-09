@@ -1,0 +1,71 @@
+# Helm values for the in-cluster controller (team mode). Renders a Deployment
+# with leader election, the scoped ServiceAccount + RBAC, a ServiceMonitor, and
+# NetworkPolicies. Templates live alongside this file in deploy/helm/templates/.
+
+replicaCount: 2          # leader election → one active owner per cluster shard
+
+image:
+  repository: ghcr.io/voujr/voujr
+  tag: ""                # defaults to chart appVersion
+  pullPolicy: IfNotPresent
+
+mode: read-only          # controller default; mutations still require approval flow
+
+# Authority: the controller uses its mounted ServiceAccount.
+serviceAccount:
+  create: true
+  name: voujr
+
+rbac:
+  # "viewer" (read-only, default) | "operator" (opt-in writes, namespaced)
+  profile: viewer
+  operatorNamespaces: []   # bind operator role only in these namespaces
+
+ai:
+  gateway: portkey
+  # Provider keys come from a referenced Secret (External Secrets / Vault), never
+  # inline. The chart mounts these as env vars.
+  existingSecret: voujr-ai-keys
+  tiers:
+    fast: anthropic/claude-haiku-4-5
+    reasoning: anthropic/claude-opus-4-8
+    long: gemini/gemini-2.5-pro
+
+store:
+  driver: postgres
+  existingSecret: voujr-db   # contains the DSN
+
+audit:
+  interval: 15m            # continuous fleet scan cadence
+
+incident:
+  slack:
+    existingSecret: voujr-slack   # webhook URL
+  escalateAtOrAbove: P1
+
+metrics:
+  enabled: true
+  serviceMonitor: true     # Prometheus Operator
+
+# Pod hardening to satisfy the "restricted" Pod Security Standard.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# Egress is restricted to API servers + the AI gateway endpoint by a NetworkPolicy.
+networkPolicy:
+  enabled: true
+  aiGatewayCIDRs: []       # e.g. ["35.0.0.0/8"] for the Portkey endpoint

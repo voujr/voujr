@@ -1,0 +1,29 @@
+# Binaries
+/bin/
+/dist/
+voujr
+*.exe
+
+# Local state
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env
+.env.local
+
+# Secrets / kubeconfigs — never commit
+*.kubeconfig
+kubeconfig
+secrets/
+
+# Go
+vendor/
+*.test
+*.out
+coverage.*
+
+# Editor
+.idea/
+.vscode/
+.DS_Store

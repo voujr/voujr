@@ -1,0 +1,42 @@
+# voujr-operator: OPT-IN write role, scoped to selected namespaces via a
+# RoleBinding (NOT a ClusterRoleBinding). Adds patch/update/scale/rollout on
+# workloads so the agent can apply approved, non-destructive remediations. It
+# deliberately excludes `delete`, namespace/CRD writes, and Secret reads.
+#
+# Bind this only in namespaces where you want the agent to be able to act, e.g.:
+#   kubectl create rolebinding voujr-operator \
+#     --clusterrole=voujr-operator \
+#     --serviceaccount=voujr:voujr -n payments
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: voujr-operator
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale"]
+    verbs: ["update", "patch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # rollout restart is a patch to the pod template annotation.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["patch"]
+---
+# Example namespace-scoped binding (apply per allowed namespace).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: voujr-operator
+  namespace: payments
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: voujr-operator
+subjects:
+  - kind: ServiceAccount
+    name: voujr
+    namespace: voujr
