@@ -13,8 +13,16 @@ var timeNow = time.Now
 // added here as they are implemented across the reliability/security/cost/
 // optimization categories.
 func RegisterAll(rs *audit.RuleSet) {
+	// reliability
 	rs.Register(MissingReadinessProbe{})
 	rs.Register(MissingLivenessProbe{})
-	// security.privileged_container, cost.overprovisioned_cpu,
-	// optimization.idle_workload, … register here.
+	// security
+	rs.Register(PrivilegedContainer{})
+	rs.Register(HostPathVolume{})
+	// cost
+	rs.Register(MissingResourceRequests{})
+	// optimization
+	rs.Register(MissingMemoryLimit{})
+	// Future rules (need a richer snapshot: RBAC, Secrets, NetworkPolicies,
+	// live metrics for right-sizing/idle detection) register here.
 }
