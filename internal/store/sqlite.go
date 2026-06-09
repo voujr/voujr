@@ -165,6 +165,81 @@ func (s *SQLite) CreateSession(ctx context.Context, userID, clusterID, mode stri
 	return id, err
 }
 
+// ErrSessionNotFound is returned by GetSession for an unknown id, so the CLI can
+// print a friendly message instead of a raw driver error.
+var ErrSessionNotFound = errors.New("session not found")
+
+// SessionInfo is a session's restorable configuration (for --resume).
+type SessionInfo struct {
+	ID             string
+	Mode           string
+	ClusterID      string
+	ClusterName    string
+	ClusterContext string
+	EnabledTools   []string
+	BudgetCents    int
+}
+
+// GetSession returns a session's config for resume. Returns sql.ErrNoRows if the
+// id is unknown.
+func (s *SQLite) GetSession(ctx context.Context, id string) (SessionInfo, error) {
+	var (
+		info                           SessionInfo
+		clusterID, name, kctx, enabled sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT s.id, s.mode, s.cluster_id, c.name, c.context, s.enabled_tools, s.budget_cents
+		 FROM sessions s LEFT JOIN clusters c ON s.cluster_id = c.id
+		 WHERE s.id = ?`, id).
+		Scan(&info.ID, &info.Mode, &clusterID, &name, &kctx, &enabled, &info.BudgetCents)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SessionInfo{}, ErrSessionNotFound
+	}
+	if err != nil {
+		return SessionInfo{}, err
+	}
+	info.ClusterID, info.ClusterName, info.ClusterContext = clusterID.String, name.String, kctx.String
+	if enabled.Valid && enabled.String != "" {
+		_ = json.Unmarshal([]byte(enabled.String), &info.EnabledTools)
+	}
+	return info, nil
+}
+
+// SessionSummary is a one-line listing of a session for `voujr sessions`.
+type SessionSummary struct {
+	ID        string
+	Cluster   string
+	Mode      string
+	CreatedAt string
+	Messages  int
+}
+
+// ListSessions returns the most recent sessions, newest first.
+func (s *SQLite) ListSessions(ctx context.Context, limit int) ([]SessionSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT s.id, COALESCE(c.name,''), s.mode, s.created_at,
+		        (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id)
+		 FROM sessions s LEFT JOIN clusters c ON s.cluster_id = c.id
+		 ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []SessionSummary
+	for rows.Next() {
+		var ss SessionSummary
+		if err := rows.Scan(&ss.ID, &ss.Cluster, &ss.Mode, &ss.CreatedAt, &ss.Messages); err != nil {
+			return nil, err
+		}
+		out = append(out, ss)
+	}
+	return out, rows.Err()
+}
+
 // --- session.Store: conversation messages --------------------------------
 
 // AppendMessage persists one conversation message.

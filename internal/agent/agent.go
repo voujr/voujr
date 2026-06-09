@@ -57,6 +57,10 @@ type Agent struct {
 	// persist, if set, durably records each conversation message (user,
 	// assistant, tool). It is best-effort: a storage error never aborts a turn.
 	persist func(context.Context, ai.Message) error
+
+	// recordUsage, if set, durably records per-call token/cost accounting along
+	// with the routing reason. Best-effort, like persist.
+	recordUsage func(context.Context, ai.Usage, string) error
 }
 
 // Config wires an Agent.
@@ -70,6 +74,8 @@ type Config struct {
 	BudgetCents int
 	// Persist durably records each conversation message; nil disables persistence.
 	Persist func(context.Context, ai.Message) error
+	// RecordUsage durably records per-call token/cost; nil disables accounting.
+	RecordUsage func(context.Context, ai.Usage, string) error
 }
 
 // New builds an Agent seeded with the system prompt.
@@ -78,14 +84,15 @@ func New(c Config) *Agent {
 		c.MaxSteps = 12
 	}
 	a := &Agent{
-		provider: c.Provider,
-		router:   c.Router,
-		registry: c.Registry,
-		clusters: c.Clusters,
-		sp:       c.Session,
-		maxSteps: c.MaxSteps,
-		budget:   c.BudgetCents,
-		persist:  c.Persist,
+		provider:    c.Provider,
+		router:      c.Router,
+		registry:    c.Registry,
+		clusters:    c.Clusters,
+		sp:          c.Session,
+		maxSteps:    c.MaxSteps,
+		budget:      c.BudgetCents,
+		persist:     c.Persist,
+		recordUsage: c.RecordUsage,
 	}
 	a.history = []ai.Message{{Role: ai.RoleSystem, Content: systemPreamble}}
 	return a
@@ -100,11 +107,25 @@ func (a *Agent) record(ctx context.Context, m ai.Message) {
 	_ = a.persist(ctx, m)
 }
 
+// account durably records token/cost usage if accounting is configured.
+// Best-effort, like record.
+func (a *Agent) account(ctx context.Context, u ai.Usage, reason string) {
+	if a.recordUsage == nil {
+		return
+	}
+	_ = a.recordUsage(ctx, u, reason)
+}
+
 // History returns the conversation so far (for persistence/resume).
 func (a *Agent) History() []ai.Message { return a.history }
 
-// Restore rehydrates a prior conversation (resume).
-func (a *Agent) Restore(msgs []ai.Message) { a.history = msgs }
+// Restore rehydrates a prior conversation (resume), preserving the stable system
+// preamble (which is never persisted) and appending the loaded user/assistant/
+// tool messages after it.
+func (a *Agent) Restore(msgs []ai.Message) {
+	system := a.history[:1:1] // history[0] is always the system preamble
+	a.history = append(system, msgs...)
+}
 
 // Run executes one user turn, streaming events via emit. It returns the final
 // assistant text. The bounded loop lives in loop.go.

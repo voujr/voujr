@@ -43,7 +43,12 @@ func (a *Agent) runLoop(ctx context.Context, userMsg string, emit Emit) (string,
 			emit(Event{Kind: EventError, Err: err})
 			return finalText.String(), err
 		}
+		// Streamed usage reports tokens but not cost; derive it from pricing.
+		if usage.CostCents == 0 && (usage.InputTokens > 0 || usage.OutputTokens > 0) {
+			usage.CostCents = ai.EstimateCost(a.provider.Models(), usage.Model, usage.InputTokens, usage.OutputTokens)
+		}
 		a.spent += usage.CostCents
+		a.account(ctx, usage, dec.Routing.Reason)
 		a.history = append(a.history, assistant)
 		a.record(ctx, assistant)
 

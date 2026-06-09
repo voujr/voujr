@@ -61,6 +61,10 @@ func New(ctx context.Context, a Runner, cluster string) *Model {
 	return m
 }
 
+// Notice appends an informational line to the transcript before the program
+// starts (e.g. the session id, or a resume banner).
+func (m *Model) Notice(s string) { m.write(s) }
+
 // SetAgent injects the runner after construction. This breaks the wiring cycle:
 // the tool registry needs the UI as its Approver, the agent needs the registry,
 // and the UI needs the agent — so the UI is built first (agent nil) and the agent

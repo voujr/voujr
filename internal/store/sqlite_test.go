@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -158,6 +159,43 @@ func TestFindingUpsertDedup(t *testing.T) {
 	}
 	if sev != "P1" {
 		t.Fatalf("upsert should escalate severity to P1, got %s", sev)
+	}
+}
+
+func TestSessionResumeAndList(t *testing.T) {
+	st, sessionID, _ := openTestStore(t)
+	ctx := context.Background()
+
+	for _, m := range []ai.Message{
+		{Role: ai.RoleUser, Content: "hi"},
+		{Role: ai.RoleAssistant, Content: "hello"},
+	} {
+		if err := st.AppendMessage(ctx, sessionID, m); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	// GetSession returns the restorable config (mode + cluster + context).
+	info, err := st.GetSession(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if info.Mode != "read-only" || info.ClusterName != "prod" || info.ClusterContext != "prod-ctx" {
+		t.Fatalf("unexpected session info: %+v", info)
+	}
+
+	// Unknown id surfaces a friendly sentinel so the CLI can report it cleanly.
+	if _, err := st.GetSession(ctx, "does-not-exist"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("want ErrSessionNotFound for unknown session, got %v", err)
+	}
+
+	// ListSessions reports the message count for discovery.
+	list, err := st.ListSessions(ctx, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != sessionID || list[0].Messages != 2 {
+		t.Fatalf("unexpected session list: %+v", list)
 	}
 }
 

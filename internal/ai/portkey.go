@@ -110,12 +110,19 @@ type oaiTool struct {
 }
 
 type oaiRequest struct {
-	Model       string       `json:"model"`
-	Messages    []oaiMessage `json:"messages"`
-	Tools       []oaiTool    `json:"tools,omitempty"`
-	Temperature float32      `json:"temperature,omitempty"`
-	MaxTokens   int          `json:"max_tokens,omitempty"`
-	Stream      bool         `json:"stream,omitempty"`
+	Model         string         `json:"model"`
+	Messages      []oaiMessage   `json:"messages"`
+	Tools         []oaiTool      `json:"tools,omitempty"`
+	Temperature   float32        `json:"temperature,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
+	Stream        bool           `json:"stream,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+// streamOptions asks the gateway to emit a final usage chunk on a streamed
+// response so we can account tokens/cost even when streaming.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 func toWireMessages(in []Message) []oaiMessage {
@@ -157,6 +164,9 @@ func (p *Portkey) newRequest(ctx context.Context, req Request, stream bool) (*ht
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 		Stream:      stream,
+	}
+	if stream {
+		body.StreamOptions = &streamOptions{IncludeUsage: true}
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -233,12 +243,7 @@ func fromWireMessage(m oaiMessage) Message {
 }
 
 func (p *Portkey) estimateCost(model string, in, out int) float64 {
-	for _, m := range p.models {
-		if strings.HasSuffix(m.Ref, model) || m.Ref == model {
-			return float64(in)/1e6*m.InputCentsPerMTok + float64(out)/1e6*m.OutputCentsPerMTok
-		}
-	}
-	return 0
+	return EstimateCost(p.models, model, in, out)
 }
 
 // Stream performs a streaming completion over SSE.
@@ -269,10 +274,11 @@ func (p *Portkey) Embed(ctx context.Context, inputs []string) ([][]float32, erro
 // sseStream parses an OpenAI-compatible Server-Sent Events stream, reassembling
 // streamed tool-call argument fragments into complete ToolCalls.
 type sseStream struct {
-	r       *bufio.Reader
-	c       io.Closer
-	pending map[int]*ToolCall // index -> accumulating call
-	flush   []ToolCall        // completed calls awaiting emission, in index order
+	r         *bufio.Reader
+	c         io.Closer
+	pending   map[int]*ToolCall // index -> accumulating call
+	flush     []ToolCall        // completed calls awaiting emission, in index order
+	lastUsage *Usage            // captured from the final include_usage chunk
 }
 
 func (s *sseStream) Recv() (Delta, error) {
@@ -288,7 +294,7 @@ func (s *sseStream) Recv() (Delta, error) {
 	for {
 		line, err := s.r.ReadString('\n')
 		if err != nil {
-			return Delta{Done: true}, err
+			return Delta{Done: true, Usage: s.lastUsage}, err
 		}
 		line = strings.TrimSpace(line)
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -296,9 +302,10 @@ func (s *sseStream) Recv() (Delta, error) {
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
-			return Delta{Done: true}, nil
+			return Delta{Done: true, Usage: s.lastUsage}, nil
 		}
 		var chunk struct {
+			Model   string `json:"model"`
 			Choices []struct {
 				Delta struct {
 					Content   string `json:"content"`
@@ -313,9 +320,21 @@ func (s *sseStream) Recv() (Delta, error) {
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
+			Usage *struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		// The include_usage chunk arrives last with empty choices; capture it.
+		if chunk.Usage != nil {
+			s.lastUsage = &Usage{
+				InputTokens:  chunk.Usage.PromptTokens,
+				OutputTokens: chunk.Usage.CompletionTokens,
+				Model:        chunk.Model,
+			}
 		}
 		if len(chunk.Choices) == 0 {
 			continue

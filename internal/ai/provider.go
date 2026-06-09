@@ -4,7 +4,10 @@
 // detail selected at wiring time.
 package ai
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Role identifies the author of a message in the conversation.
 type Role string
@@ -107,6 +110,18 @@ type ModelInfo struct {
 	OutputCentsPerMTok float64
 	// Tier classifies the model: "fast" | "reasoning" | "long".
 	Tier string
+}
+
+// EstimateCost computes the cost in cents of a call from token counts and the
+// model's per-Mtok pricing. model may be a bare name (as streamed usage often
+// reports) or a "provider/model" ref; matching is by suffix so either resolves.
+func EstimateCost(models []ModelInfo, model string, inTok, outTok int) float64 {
+	for _, m := range models {
+		if m.Ref == model || strings.HasSuffix(m.Ref, "/"+model) || strings.HasSuffix(m.Ref, model) {
+			return float64(inTok)/1e6*m.InputCentsPerMTok + float64(outTok)/1e6*m.OutputCentsPerMTok
+		}
+	}
+	return 0
 }
 
 // Provider is the single abstraction the runtime depends on.
