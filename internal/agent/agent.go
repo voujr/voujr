@@ -6,6 +6,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/voujr/voujr/internal/ai"
 	"github.com/voujr/voujr/internal/k8s"
@@ -72,6 +73,9 @@ type Agent struct {
 
 	// memory, if set, supplies cross-session recall injected into each turn.
 	memory Memory
+
+	// onTurn, if set, receives end-to-end turn latency for metrics.
+	onTurn func(time.Duration)
 }
 
 // Config wires an Agent.
@@ -89,6 +93,8 @@ type Config struct {
 	RecordUsage func(context.Context, ai.Usage, string) error
 	// Memory supplies cross-session recall; nil disables long-term memory.
 	Memory Memory
+	// OnTurn receives end-to-end turn latency; nil disables turn metrics.
+	OnTurn func(time.Duration)
 }
 
 // New builds an Agent seeded with the system prompt.
@@ -107,6 +113,7 @@ func New(c Config) *Agent {
 		persist:     c.Persist,
 		recordUsage: c.RecordUsage,
 		memory:      c.Memory,
+		onTurn:      c.OnTurn,
 	}
 	a.history = []ai.Message{{Role: ai.RoleSystem, Content: systemPreamble}}
 	return a

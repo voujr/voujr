@@ -180,6 +180,12 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("PROMETHEUS_URL"); v != "" {
 		cfg.Integrations.PrometheusURL = v
 	}
+	if v := os.Getenv("SLACK_WEBHOOK_URL"); v != "" {
+		cfg.Incident.SlackWebhook = v
+	}
+	if v := os.Getenv("PAGERDUTY_ROUTING_KEY"); v != "" {
+		cfg.Incident.PagerDutyKey = v
+	}
 }
 
 // APIKey resolves the provider/gateway key from the environment at call time.

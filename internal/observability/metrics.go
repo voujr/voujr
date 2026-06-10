@@ -5,6 +5,7 @@ package observability
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -56,6 +57,53 @@ func NewMetrics() *Metrics {
 			Help: "Mutation approval decisions.",
 		}, []string{"decision"}),
 	}
+}
+
+// RecordToolExec records a tool execution's outcome and latency.
+func (m *Metrics) RecordToolExec(tool, status string, d time.Duration) {
+	if m == nil {
+		return
+	}
+	m.ToolExecTotal.WithLabelValues(tool, status).Inc()
+	m.ToolExecLatency.WithLabelValues(tool).Observe(d.Seconds())
+}
+
+// RecordApproval records a mutation approval decision.
+func (m *Metrics) RecordApproval(approved bool) {
+	if m == nil {
+		return
+	}
+	decision := "rejected"
+	if approved {
+		decision = "approved"
+	}
+	m.ApprovalsTotal.WithLabelValues(decision).Inc()
+}
+
+// RecordTurn records end-to-end agent turn latency.
+func (m *Metrics) RecordTurn(d time.Duration) {
+	if m == nil {
+		return
+	}
+	m.TurnLatency.Observe(d.Seconds())
+}
+
+// RecordAIUsage records token/cost for one model call.
+func (m *Metrics) RecordAIUsage(provider, model string, inTok, outTok int, costCents float64) {
+	if m == nil {
+		return
+	}
+	m.AICostCents.WithLabelValues(provider, model).Add(costCents)
+	m.AITokens.WithLabelValues(provider, model, "input").Add(float64(inTok))
+	m.AITokens.WithLabelValues(provider, model, "output").Add(float64(outTok))
+}
+
+// SetFinding sets the open-findings gauge for a category/severity bucket.
+func (m *Metrics) SetFinding(category, severity string, n int) {
+	if m == nil {
+		return
+	}
+	m.FindingsTotal.WithLabelValues(category, severity).Set(float64(n))
 }
 
 // Serve exposes /metrics on addr (e.g. ":9090"). A no-op when addr is empty.

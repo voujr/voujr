@@ -75,6 +75,13 @@ type Redactor interface {
 	Scrub(s string) string
 }
 
+// Observer receives metrics signals from the dispatch chain. Optional; wired in
+// the composition root over a Prometheus collector set.
+type Observer interface {
+	ToolExecuted(tool, status string, d time.Duration)
+	ApprovalDecided(approved bool)
+}
+
 // SessionPolicy is the per-session execution context for a dispatch.
 type SessionPolicy struct {
 	SessionID   string   // persistence key for tool_executions / audit_log
@@ -92,6 +99,22 @@ type Registry struct {
 	approver Approver
 	audit    AuditSink
 	redactor Redactor
+	observer Observer // optional metrics sink
+}
+
+// SetObserver attaches an optional metrics observer to the dispatch chain.
+func (reg *Registry) SetObserver(o Observer) { reg.observer = o }
+
+func (reg *Registry) emitTool(tool, status string, d time.Duration) {
+	if reg.observer != nil {
+		reg.observer.ToolExecuted(tool, status, d)
+	}
+}
+
+func (reg *Registry) emitApproval(approved bool) {
+	if reg.observer != nil {
+		reg.observer.ApprovalDecided(approved)
+	}
 }
 
 // NewRegistry builds a registry with its safety collaborators.
@@ -186,6 +209,7 @@ func (reg *Registry) Dispatch(ctx context.Context, sp SessionPolicy, name string
 		}
 		if !pd.Allow {
 			reg.record(ctx, t, sp, args, "", "", false, "denied", pd.Reason, time.Since(start))
+			reg.emitTool(name, "denied", time.Since(start))
 			return Result{}, fmt.Errorf("%w: %s", ErrDenied, pd.Reason)
 		}
 	}
@@ -215,8 +239,10 @@ func (reg *Registry) Dispatch(ctx context.Context, sp SessionPolicy, name string
 		if err != nil {
 			return Result{}, err
 		}
+		reg.emitApproval(ok)
 		if !ok {
 			reg.record(ctx, t, sp, args, diff, who, false, "rejected", "user rejected", time.Since(start))
+			reg.emitTool(name, "rejected", time.Since(start))
 			return Result{}, ErrNotApproved
 		}
 		approver = who
@@ -235,8 +261,9 @@ func (reg *Registry) Dispatch(ctx context.Context, sp SessionPolicy, name string
 		res.Summary = reg.redactor.Scrub(res.Summary)
 	}
 
-	// 9. audit
+	// 9. audit + metrics
 	reg.record(ctx, t, sp, args, diff, approver, false, status, res.Summary, time.Since(start))
+	reg.emitTool(name, status, time.Since(start))
 
 	return res, err
 }

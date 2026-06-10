@@ -5,12 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/voujr/voujr/internal/ai"
 )
 
 // runLoop is the bounded reason→act→observe loop for a single user turn.
 func (a *Agent) runLoop(ctx context.Context, userMsg string, emit Emit) (string, error) {
+	if a.onTurn != nil {
+		start := time.Now()
+		defer func() { a.onTurn(time.Since(start)) }()
+	}
 	a.assemble(ctx, userMsg)
 
 	var finalText strings.Builder

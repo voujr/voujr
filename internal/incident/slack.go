@@ -13,36 +13,61 @@ import (
 	"github.com/voujr/voujr/internal/audit"
 )
 
-// Notifier sends enriched alerts for findings at or above a threshold.
+// Notifier sends enriched alerts for findings at or above a threshold to any
+// configured sink (Slack and/or PagerDuty).
 type Notifier struct {
 	slackWebhook string
+	pagerDutyKey string
 	threshold    audit.Severity
 	http         *http.Client
+
+	// pdURLOverride redirects the PagerDuty endpoint in tests; empty = real API.
+	pdURLOverride string
 }
 
-// NewNotifier builds a Slack notifier. threshold is the minimum severity to
-// escalate (e.g. P1 escalates P0+P1).
-func NewNotifier(slackWebhook string, threshold audit.Severity, c *http.Client) *Notifier {
+// NewNotifier builds a notifier. Either sink may be empty (disabled). threshold
+// is the minimum severity to escalate (e.g. P1 escalates P0+P1).
+func NewNotifier(slackWebhook, pagerDutyKey string, threshold audit.Severity, c *http.Client) *Notifier {
 	if c == nil {
 		c = http.DefaultClient
 	}
-	return &Notifier{slackWebhook: slackWebhook, threshold: threshold, http: c}
+	if threshold == "" {
+		threshold = audit.P1
+	}
+	return &Notifier{
+		slackWebhook: slackWebhook,
+		pagerDutyKey: pagerDutyKey,
+		threshold:    threshold,
+		http:         c,
+	}
 }
 
-// Notify sends alerts for the qualifying findings in a report.
-func (n *Notifier) Notify(ctx context.Context, findings []audit.Finding) error {
-	if n.slackWebhook == "" {
-		return nil
+// Enabled reports whether any sink is configured.
+func (n *Notifier) Enabled() bool { return n.slackWebhook != "" || n.pagerDutyKey != "" }
+
+// Notify sends alerts for the qualifying findings and returns how many fired.
+func (n *Notifier) Notify(ctx context.Context, findings []audit.Finding) (int, error) {
+	if !n.Enabled() {
+		return 0, nil
 	}
+	var fired int
 	for _, f := range findings {
 		if !atOrAbove(f.Severity, n.threshold) {
 			continue
 		}
-		if err := n.postSlack(ctx, f); err != nil {
-			return err
+		if n.slackWebhook != "" {
+			if err := n.postSlack(ctx, f); err != nil {
+				return fired, err
+			}
 		}
+		if n.pagerDutyKey != "" {
+			if err := n.triggerPagerDuty(ctx, f); err != nil {
+				return fired, err
+			}
+		}
+		fired++
 	}
-	return nil
+	return fired, nil
 }
 
 func (n *Notifier) postSlack(ctx context.Context, f audit.Finding) error {

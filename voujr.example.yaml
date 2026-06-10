@@ -34,8 +34,11 @@ observability:
   log_level: info
 
 incident:
-  escalate_at_or_above: P1   # P0 | P1
-  # slack_webhook / pagerduty_key are read from env, not stored here
+  escalate_at_or_above: P1   # P0 | P1 — min severity to alert on
+  # Sinks are read from env (preferred): SLACK_WEBHOOK_URL, PAGERDUTY_ROUTING_KEY.
+  # `voujr audit` fires alerts for findings at/above the threshold to any configured sink.
+  slack_webhook: ""
+  pagerduty_key: ""
 
 integrations:
   # Operator-configured (never model-chosen) endpoints the tools talk to.
