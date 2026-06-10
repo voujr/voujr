@@ -47,3 +47,9 @@ integrations:
   # When set, the prometheus_query tool is advertised to the agent.
   # Also settable via the PROMETHEUS_URL env var.
   prometheus_url: ""   # e.g. http://prometheus.monitoring:9090
+
+store:
+  driver: sqlite       # sqlite (local, default) | postgres (server/controller)
+  # Postgres connection string — set via DATABASE_URL env, never commit it:
+  #   postgres://user:pass@host:5432/voujr?sslmode=require
+  dsn: ""

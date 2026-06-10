@@ -40,6 +40,15 @@ type Config struct {
 	Observe      ObserveConfig      `yaml:"observability"`
 	Incident     IncidentConfig     `yaml:"incident"`
 	Integrations IntegrationsConfig `yaml:"integrations"`
+	Store        StoreConfig        `yaml:"store"`
+}
+
+// StoreConfig selects the persistence backend. SQLite (local, default) needs no
+// DSN; Postgres (server/controller) needs a connection string (read from
+// DATABASE_URL in practice, never committed).
+type StoreConfig struct {
+	Driver string `yaml:"driver"` // "sqlite" (default) | "postgres"
+	DSN    string `yaml:"dsn"`
 }
 
 // IntegrationsConfig holds endpoints for external observability/GitOps systems
@@ -191,6 +200,12 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("PAGERDUTY_ROUTING_KEY"); v != "" {
 		cfg.Incident.PagerDutyKey = v
+	}
+	if v := os.Getenv("VOUJR_DB_DRIVER"); v != "" {
+		cfg.Store.Driver = v
+	}
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.Store.DSN = v
 	}
 }
 

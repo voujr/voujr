@@ -6,8 +6,9 @@ package migrations
 
 import "embed"
 
-// FS holds every *.sql migration in this directory, applied in lexical order
-// (so name them 0001_, 0002_, …).
+// FS holds the SQL migrations, applied in lexical order (so name them 0001_,
+// 0002_, …). Top-level *.sql are the SQLite schema; postgres/*.sql is the
+// Postgres dialect. The store picks the right set per driver.
 //
-//go:embed *.sql
+//go:embed *.sql postgres/*.sql
 var FS embed.FS
