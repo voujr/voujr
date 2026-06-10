@@ -22,13 +22,21 @@ type Runner interface {
 	Run(ctx context.Context, userMsg string, emit agent.Emit) (string, error)
 }
 
+// ClusterController lets the UI switch the active cluster in-session.
+type ClusterController interface {
+	Switch(name string) error
+	Names() []string
+	ActiveName() string
+}
+
 // Model is the root Bubble Tea model.
 type Model struct {
-	ctx     context.Context
-	agent   Runner
-	vp      viewport.Model
-	input   textinput.Model
-	cluster string
+	ctx      context.Context
+	agent    Runner
+	clusters ClusterController
+	vp       viewport.Model
+	input    textinput.Model
+	cluster  string
 
 	transcript strings.Builder
 	streaming  bool
@@ -45,20 +53,59 @@ type Model struct {
 	pending      *tools.ApprovalRequest
 }
 
-// New constructs the UI model.
-func New(ctx context.Context, a Runner, cluster string) *Model {
+// New constructs the UI model. clusters drives in-session cluster switching and
+// supplies the active cluster name for display.
+func New(ctx context.Context, a Runner, clusters ClusterController) *Model {
 	in := textinput.New()
-	in.Placeholder = "Ask about your cluster… (e.g. \"why are prod pods restarting?\")"
+	in.Placeholder = "Ask about your cluster… (e.g. \"why are prod pods restarting?\")  —  /help for commands"
 	in.Focus()
 
+	active := ""
+	if clusters != nil {
+		active = clusters.ActiveName()
+	}
 	vp := viewport.New(0, 0)
 	m := &Model{
-		ctx: ctx, agent: a, input: in, vp: vp, cluster: cluster,
+		ctx: ctx, agent: a, clusters: clusters, input: in, vp: vp, cluster: active,
 		approvalReq:  make(chan tools.ApprovalRequest),
 		approvalResp: make(chan bool),
 	}
-	m.write(fmt.Sprintf("Connected to %s. Read-only by default — mutations need your approval.\n", cluster))
+	m.write(fmt.Sprintf("Connected to %s. Read-only by default — mutations need your approval.\n", active))
 	return m
+}
+
+// handleCommand processes a slash command (input beginning with "/") and reports
+// whether it was handled (so it isn't sent to the agent).
+func (m *Model) handleCommand(input string) bool {
+	if !strings.HasPrefix(input, "/") {
+		return false
+	}
+	fields := strings.Fields(input)
+	switch fields[0] {
+	case "/cluster":
+		if m.clusters == nil || len(fields) < 2 {
+			m.write("usage: /cluster <name>\n")
+			return true
+		}
+		if err := m.clusters.Switch(fields[1]); err != nil {
+			m.write("✗ " + err.Error() + "\n")
+			return true
+		}
+		m.cluster = m.clusters.ActiveName()
+		m.write("→ active cluster is now " + m.cluster + "\n")
+	case "/clusters":
+		if m.clusters == nil {
+			m.write("(no clusters registered)\n")
+			return true
+		}
+		m.write(fmt.Sprintf("clusters: %s   (active: %s)\n",
+			strings.Join(m.clusters.Names(), ", "), m.clusters.ActiveName()))
+	case "/help":
+		m.write("commands:\n  /cluster <name>  switch the active cluster\n  /clusters        list registered clusters\n  /help            this help\n")
+	default:
+		m.write("unknown command " + fields[0] + " (try /help)\n")
+	}
+	return true
 }
 
 // Notice appends an informational line to the transcript before the program
@@ -115,7 +162,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			if m.streaming || strings.TrimSpace(m.input.Value()) == "" {
+			input := strings.TrimSpace(m.input.Value())
+			if m.streaming || input == "" {
+				return m, nil
+			}
+			if strings.HasPrefix(input, "/") {
+				m.input.Reset()
+				m.handleCommand(input)
 				return m, nil
 			}
 			return m, m.submit()

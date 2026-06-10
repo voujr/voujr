@@ -5,6 +5,8 @@
 context: ""            # kube-context; empty = current-context
 mode: read-only        # read-only | propose | apply
 data_dir: ~/.voujr
+# Register more clusters with: voujr --clusters ctxA,ctxB  (switch in-session via /cluster <name>)
+# Encrypt sensitive stored columns at rest by exporting VOUJR_DB_KEY=<passphrase>.
 
 ai:
   gateway: portkey     # portkey | direct

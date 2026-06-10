@@ -28,8 +28,34 @@ import (
 // connection so writes serialize, and the audit hash-chain read-then-append is
 // additionally guarded by a mutex.
 type SQLite struct {
-	db *sql.DB
-	mu sync.Mutex // serializes audit-log hash-chain appends
+	db     *sql.DB
+	mu     sync.Mutex // serializes audit-log hash-chain appends
+	cipher Encryptor  // optional field-level encryption at rest
+}
+
+// Encryptor provides field-level encryption for sensitive stored values. It is
+// satisfied by *security.Cipher. Optional; nil stores plaintext.
+type Encryptor interface {
+	Encrypt(plaintext string) (string, error)
+	Decrypt(ciphertext string) (string, error)
+}
+
+// SetCipher enables encryption at rest for sensitive columns (message content,
+// tool args/diffs, memories, the audit payload). Call before any writes.
+func (s *SQLite) SetCipher(e Encryptor) { s.cipher = e }
+
+func (s *SQLite) enc(plaintext string) (string, error) {
+	if s.cipher == nil {
+		return plaintext, nil
+	}
+	return s.cipher.Encrypt(plaintext)
+}
+
+func (s *SQLite) dec(ciphertext string) (string, error) {
+	if s.cipher == nil {
+		return ciphertext, nil
+	}
+	return s.cipher.Decrypt(ciphertext)
 }
 
 // Compile-time assertions that SQLite implements the consumer interfaces.
@@ -250,9 +276,13 @@ func (s *SQLite) AppendMessage(ctx context.Context, sessionID string, m ai.Messa
 		b, _ := json.Marshal(payload)
 		toolJSON = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.ExecContext(ctx,
+	content, err := s.enc(m.Content)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO messages(id,session_id,role,content,tool_call_json) VALUES(?,?,?,?,?)`,
-		uuid.NewString(), sessionID, string(m.Role), m.Content, toolJSON)
+		uuid.NewString(), sessionID, string(m.Role), content, toolJSON)
 	return err
 }
 
@@ -271,6 +301,9 @@ func (s *SQLite) LoadMessages(ctx context.Context, sessionID string) ([]ai.Messa
 		var role, content string
 		var toolJSON sql.NullString
 		if err := rows.Scan(&role, &content, &toolJSON); err != nil {
+			return nil, err
+		}
+		if content, err = s.dec(content); err != nil {
 			return nil, err
 		}
 		m := ai.Message{Role: ai.Role(role), Content: content}
@@ -301,9 +334,13 @@ func (s *SQLite) SaveMemory(ctx context.Context, m session.Memory) error {
 	if id == "" {
 		id = uuid.NewString()
 	}
-	_, err := s.db.ExecContext(ctx,
+	text, err := s.enc(m.Text)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO memories(id,session_id,kind,text,embedding) VALUES(?,?,?,?,?)`,
-		id, nullStr(m.SessionID), m.Kind, m.Text, encodeVector(m.Embedding))
+		id, nullStr(m.SessionID), m.Kind, text, encodeVector(m.Embedding))
 	return err
 }
 
@@ -329,6 +366,9 @@ func (s *SQLite) RecallMemories(ctx context.Context, sessionID string, query []f
 		var id, kind, text string
 		var emb []byte
 		if err := rows.Scan(&id, &kind, &text, &emb); err != nil {
+			return nil, err
+		}
+		if text, err = s.dec(text); err != nil {
 			return nil, err
 		}
 		mem := session.Memory{ID: id, SessionID: sessionID, Kind: kind, Text: text, Embedding: decodeVector(emb)}
@@ -383,11 +423,23 @@ func (s *SQLite) Record(ctx context.Context, e tools.AuditEntry) error {
 	if args == "" {
 		args = "{}"
 	}
+	encArgs, err := s.enc(args)
+	if err != nil {
+		return err
+	}
+	var encDiff sql.NullString
+	if e.Diff != "" {
+		d, err := s.enc(e.Diff)
+		if err != nil {
+			return err
+		}
+		encDiff = sql.NullString{String: d, Valid: true}
+	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO tool_executions
 		 (id,session_id,cluster_id,tool_name,args_json,diff_json,risk,approved_by,dry_run,status,duration_ms)
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		uuid.NewString(), nullStr(e.SessionID), clusterID, e.Tool, args, nullStr(e.Diff),
+		uuid.NewString(), nullStr(e.SessionID), clusterID, e.Tool, encArgs, encDiff,
 		e.Risk.String(), nullStr(e.Approver), boolToInt(e.DryRun), e.Status, e.Duration.Milliseconds(),
 	); err != nil {
 		return fmt.Errorf("insert tool_execution: %w", err)
@@ -407,8 +459,15 @@ func (s *SQLite) Record(ctx context.Context, e tools.AuditEntry) error {
 		Tool: e.Tool, Cluster: e.Cluster, Risk: e.Risk.String(), Status: e.Status,
 		Approver: e.Approver, DryRun: e.DryRun, Summary: e.Summary, Args: json.RawMessage(args),
 	})
+	// The hash chain covers the CLEARTEXT payload (deterministic); the payload is
+	// then stored encrypted, so VerifyAuditChain decrypts before re-hashing.
 	sum := sha256.Sum256(append([]byte(prev), payload...))
 	cur := hex.EncodeToString(sum[:])
+
+	storedPayload, err := s.enc(string(payload))
+	if err != nil {
+		return err
+	}
 
 	actor := e.Approver
 	if actor == "" || actor == "n/a" {
@@ -416,7 +475,7 @@ func (s *SQLite) Record(ctx context.Context, e tools.AuditEntry) error {
 	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO audit_log(actor,action,payload_json,hash_prev,hash_curr) VALUES(?,?,?,?,?)`,
-		actor, "tool:"+e.Tool, string(payload), prev, cur); err != nil {
+		actor, "tool:"+e.Tool, storedPayload, prev, cur); err != nil {
 		return err
 	}
 
@@ -451,7 +510,12 @@ func (s *SQLite) VerifyAuditChain(ctx context.Context) (brokenAt int64, err erro
 		if err := rows.Scan(&id, &payload, &hashPrev, &hashCurr); err != nil {
 			return 0, err
 		}
-		sum := sha256.Sum256(append([]byte(prev), []byte(payload)...))
+		// The chain is computed over the cleartext payload; decrypt first.
+		clear, err := s.dec(payload)
+		if err != nil {
+			return 0, err
+		}
+		sum := sha256.Sum256(append([]byte(prev), []byte(clear)...))
 		want := hex.EncodeToString(sum[:])
 		if hashPrev != prev || hashCurr != want {
 			return id, nil

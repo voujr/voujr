@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/voujr/voujr/internal/ai"
 	"github.com/voujr/voujr/internal/audit"
+	"github.com/voujr/voujr/internal/security"
 	"github.com/voujr/voujr/internal/session"
 	"github.com/voujr/voujr/internal/tools"
 )
@@ -196,6 +198,64 @@ func TestSessionResumeAndList(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != sessionID || list[0].Messages != 2 {
 		t.Fatalf("unexpected session list: %+v", list)
+	}
+}
+
+func TestEncryptionAtRest(t *testing.T) {
+	st, sessionID, _ := openTestStore(t)
+	ctx := context.Background()
+
+	cipher, err := security.NewCipher(security.DeriveKey("unit-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetCipher(cipher)
+
+	secret := "the database password is hunter2"
+	if err := st.AppendMessage(ctx, sessionID, ai.Message{Role: ai.RoleUser, Content: secret}); err != nil {
+		t.Fatal(err)
+	}
+
+	// On disk the content must be ciphertext: tagged, and without the plaintext.
+	var raw string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT content FROM messages WHERE session_id=?`, sessionID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "hunter2") {
+		t.Fatalf("plaintext leaked to disk: %s", raw)
+	}
+	if !strings.HasPrefix(raw, "enc:") {
+		t.Fatalf("content not encrypted: %s", raw)
+	}
+
+	// LoadMessages decrypts transparently.
+	msgs, err := st.LoadMessages(ctx, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != secret {
+		t.Fatalf("decrypt round-trip failed: %+v", msgs)
+	}
+
+	// The hash chain still verifies with encryption on: it is computed over the
+	// cleartext payload, then the payload is stored encrypted.
+	if err := st.Record(ctx, tools.AuditEntry{
+		SessionID: sessionID, Tool: "kubectl_get_pods", Cluster: "prod",
+		Risk: tools.Read, Args: []byte(`{"namespace":"prod"}`), Status: "ok",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var encPayload string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT payload_json FROM audit_log LIMIT 1`).Scan(&encPayload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(encPayload, "enc:") {
+		t.Fatalf("audit payload not encrypted: %s", encPayload)
+	}
+	if broken, err := st.VerifyAuditChain(ctx); err != nil || broken != 0 {
+		t.Fatalf("chain should verify with encryption, got brokenAt=%d err=%v", broken, err)
 	}
 }
 

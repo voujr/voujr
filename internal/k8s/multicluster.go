@@ -49,6 +49,13 @@ func (r *Registry) Active() (*Cluster, error) {
 	return c, nil
 }
 
+// ActiveName returns the name of the currently selected cluster (or "").
+func (r *Registry) ActiveName() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.active
+}
+
 // Switch changes the active cluster (e.g. the "/cluster prod" command).
 func (r *Registry) Switch(name string) error {
 	r.mu.Lock()

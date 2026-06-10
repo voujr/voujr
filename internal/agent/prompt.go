@@ -55,6 +55,12 @@ func (a *Agent) contextCard(ctx context.Context) string {
 // in history) + a fresh context card + the user message. Long histories are
 // summarized by the session layer before reaching here.
 func (a *Agent) assemble(ctx context.Context, userMsg string) {
+	// Track the active cluster so a mid-session /cluster switch is reflected in
+	// the audit record, approval prompts, and policy for this turn's tool calls.
+	if c, err := a.clusters.Active(); err == nil {
+		a.sp.Cluster = c.Name
+	}
+
 	card := ai.Message{
 		Role:    ai.RoleUser,
 		Content: "[cluster context]\n" + a.contextCard(ctx),
