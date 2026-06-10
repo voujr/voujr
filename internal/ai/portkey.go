@@ -19,23 +19,26 @@ import (
 //
 // See https://portkey.ai — the chat API is OpenAI-compatible at /v1/chat/completions.
 type Portkey struct {
-	baseURL string
-	apiKey  string
-	http    *http.Client
-	models  []ModelInfo
+	baseURL    string
+	apiKey     string
+	embedModel string // "provider/model" used for Embed; empty disables embeddings
+	http       *http.Client
+	models     []ModelInfo
 }
 
 // NewPortkey constructs a gateway-backed provider. baseURL defaults to the
-// hosted gateway when empty.
-func NewPortkey(baseURL, apiKey string, timeout time.Duration, models []ModelInfo) *Portkey {
+// hosted gateway when empty. embedModel (e.g. "openai/text-embedding-3-small")
+// enables Embed; pass "" to disable embeddings/long-term memory.
+func NewPortkey(baseURL, apiKey, embedModel string, timeout time.Duration, models []ModelInfo) *Portkey {
 	if baseURL == "" {
 		baseURL = "https://api.portkey.ai/v1"
 	}
 	return &Portkey{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  apiKey,
-		http:    &http.Client{Timeout: timeout},
-		models:  models,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		apiKey:     apiKey,
+		embedModel: embedModel,
+		http:       &http.Client{Timeout: timeout},
+		models:     models,
 	}
 }
 
@@ -265,10 +268,56 @@ func (p *Portkey) Stream(ctx context.Context, req Request) (Stream, error) {
 	return &sseStream{r: bufio.NewReader(resp.Body), c: resp.Body}, nil
 }
 
-// Embed is delegated to the gateway's embeddings endpoint (omitted here for
-// brevity; the shape mirrors Chat). Returned for interface completeness.
+// Embed calls the gateway's OpenAI-compatible /embeddings endpoint. Returns one
+// vector per input, in input order. Used for long-term memory recall.
 func (p *Portkey) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
-	return nil, fmt.Errorf("portkey: Embed not implemented in scaffold")
+	if p.embedModel == "" {
+		return nil, fmt.Errorf("portkey: no embedding model configured")
+	}
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+	_, model := splitRef(p.embedModel)
+	reqBody, err := json.Marshal(map[string]any{"model": model, "input": inputs})
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/embeddings", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	cfg, _ := json.Marshal(p.buildConfig(Routing{Model: p.embedModel}))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("x-portkey-config", string(cfg))
+
+	resp, err := p.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("portkey embeddings: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("portkey embeddings status %d: %s", resp.StatusCode, b)
+	}
+
+	var out struct {
+		Data []struct {
+			Index     int       `json:"index"`
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	// Order by index so vectors line up with inputs.
+	vecs := make([][]float32, len(out.Data))
+	for _, d := range out.Data {
+		if d.Index >= 0 && d.Index < len(vecs) {
+			vecs[d.Index] = d.Embedding
+		}
+	}
+	return vecs, nil
 }
 
 // sseStream parses an OpenAI-compatible Server-Sent Events stream, reassembling

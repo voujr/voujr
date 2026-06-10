@@ -2,9 +2,13 @@ package ai
 
 import (
 	"bufio"
+	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestSSEStreamAssemblesTextToolCallsAndUsage feeds a canned OpenAI-compatible
@@ -78,5 +82,38 @@ func TestEstimateCostResolvesBareModelBySuffix(t *testing.T) {
 	}
 	if EstimateCost(models, "unknown-model", 1000, 1000) != 0 {
 		t.Fatal("unknown model should cost 0")
+	}
+}
+
+func TestPortkeyEmbedOrdersByIndex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/embeddings") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Deliberately out of order to verify we re-order by index.
+		_, _ = w.Write([]byte(`{"data":[{"index":1,"embedding":[0.4,0.5,0.6]},{"index":0,"embedding":[0.1,0.2,0.3]}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewPortkey(srv.URL, "key", "openai/text-embedding-3-small", time.Second, nil)
+	vecs, err := p.Embed(context.Background(), []string{"first", "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vecs) != 2 || len(vecs[0]) != 3 {
+		t.Fatalf("unexpected vectors: %v", vecs)
+	}
+	// vecs[0] must correspond to input index 0 ([0.1,…]); vecs[1] to index 1 ([0.4,…]).
+	if !(vecs[0][0] < 0.2 && vecs[1][0] > 0.3) {
+		t.Fatalf("embeddings not ordered by index: %v", vecs)
+	}
+}
+
+func TestPortkeyEmbedDisabled(t *testing.T) {
+	p := NewPortkey("http://unused", "key", "", time.Second, nil)
+	if _, err := p.Embed(context.Background(), []string{"x"}); err == nil {
+		t.Fatal("expected an error when no embedding model is configured")
 	}
 }

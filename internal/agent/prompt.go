@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/voujr/voujr/internal/ai"
 	"github.com/voujr/voujr/internal/tools"
@@ -58,10 +59,23 @@ func (a *Agent) assemble(ctx context.Context, userMsg string) {
 		Role:    ai.RoleUser,
 		Content: "[cluster context]\n" + a.contextCard(ctx),
 	}
+	a.history = append(a.history, card)
+
+	// Best-effort long-term recall: inject relevant prior conclusions. A recall
+	// failure (e.g. embeddings disabled) is silently ignored.
+	if a.memory != nil {
+		if facts, err := a.memory.Recall(ctx, userMsg, 5); err == nil && len(facts) > 0 {
+			a.history = append(a.history, ai.Message{
+				Role:    ai.RoleSystem,
+				Content: "[recalled operational memory]\n- " + strings.Join(facts, "\n- "),
+			})
+		}
+	}
+
 	user := ai.Message{Role: ai.RoleUser, Content: userMsg}
-	a.history = append(a.history, card, user)
-	// Persist the real user message; the context card is ephemeral grounding
-	// (re-derived live each turn) and is deliberately not stored.
+	a.history = append(a.history, user)
+	// Persist the real user message; the context card and recalled memory are
+	// ephemeral grounding (re-derived each turn) and are deliberately not stored.
 	a.record(ctx, user)
 }
 

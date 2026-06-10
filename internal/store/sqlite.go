@@ -307,12 +307,14 @@ func (s *SQLite) SaveMemory(ctx context.Context, m session.Memory) error {
 	return err
 }
 
-// RecallMemories returns the top-k memories for a session by cosine similarity to
-// query. With an empty query it returns the k most recent.
+// RecallMemories returns the top-k memories by cosine similarity to query. With
+// an empty query it returns the k most recent. An empty sessionID recalls across
+// ALL sessions (the cross-session long-term memory used by the CLI); a specific
+// sessionID restricts recall to that session.
 func (s *SQLite) RecallMemories(ctx context.Context, sessionID string, query []float32, k int) ([]session.Memory, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, kind, text, embedding FROM memories
-		 WHERE session_id=? ORDER BY created_at DESC`, sessionID)
+		 WHERE (? = '' OR session_id = ?) ORDER BY created_at DESC`, sessionID, sessionID)
 	if err != nil {
 		return nil, err
 	}

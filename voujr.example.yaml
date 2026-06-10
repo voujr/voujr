@@ -16,6 +16,7 @@ ai:
     fast: anthropic/claude-haiku-4-5
     reasoning: anthropic/claude-opus-4-8
     long: gemini/gemini-2.5-pro
+  embedding_model: openai/text-embedding-3-small  # "" disables long-term memory
 
 audit:
   enabled: true

@@ -41,6 +41,14 @@ type Event struct {
 // Emit is how the runtime streams events to a consumer (the TUI).
 type Emit func(Event)
 
+// Memory provides durable, cross-session recall of operational facts. It is
+// optional (nil disables it) and used best-effort: a recall error never aborts a
+// turn. Implemented in the composition root over the store + an embedding model.
+type Memory interface {
+	// Recall returns up to k fact texts most relevant to query.
+	Recall(ctx context.Context, query string, k int) ([]string, error)
+}
+
 // Agent holds the collaborators for a session and runs turns.
 type Agent struct {
 	provider ai.Provider
@@ -61,6 +69,9 @@ type Agent struct {
 	// recordUsage, if set, durably records per-call token/cost accounting along
 	// with the routing reason. Best-effort, like persist.
 	recordUsage func(context.Context, ai.Usage, string) error
+
+	// memory, if set, supplies cross-session recall injected into each turn.
+	memory Memory
 }
 
 // Config wires an Agent.
@@ -76,6 +87,8 @@ type Config struct {
 	Persist func(context.Context, ai.Message) error
 	// RecordUsage durably records per-call token/cost; nil disables accounting.
 	RecordUsage func(context.Context, ai.Usage, string) error
+	// Memory supplies cross-session recall; nil disables long-term memory.
+	Memory Memory
 }
 
 // New builds an Agent seeded with the system prompt.
@@ -93,6 +106,7 @@ func New(c Config) *Agent {
 		budget:      c.BudgetCents,
 		persist:     c.Persist,
 		recordUsage: c.RecordUsage,
+		memory:      c.Memory,
 	}
 	a.history = []ai.Message{{Role: ai.RoleSystem, Content: systemPreamble}}
 	return a

@@ -59,6 +59,9 @@ type AIConfig struct {
 	DefaultProvider string `yaml:"default_provider"`
 	// Tiers maps a routing tier to a concrete model reference.
 	Tiers map[string]string `yaml:"tiers"`
+	// EmbeddingModel ("provider/model") powers long-term memory recall; empty
+	// disables embeddings (recall degrades to nothing, gracefully).
+	EmbeddingModel string `yaml:"embedding_model"`
 	// BudgetCents caps spend per session; 0 = unlimited.
 	BudgetCents int `yaml:"budget_cents"`
 	// Timeout per model call.
@@ -122,6 +125,7 @@ func Default() Config {
 				"reasoning": "anthropic/claude-opus-4-8",
 				"long":      "anthropic/claude-sonnet-4-6",
 			},
+			EmbeddingModel: "openai/text-embedding-3-small",
 		},
 		Audit:    AuditConfig{Enabled: true, Interval: 0},
 		Observe:  ObserveConfig{LogLevel: "info"},
