@@ -78,5 +78,5 @@ identity in `approvals` and the audit log.
 
 ## Reporting a vulnerability
 
-Email security@voujr.example (placeholder). Do not open public issues for security
+Email support@voujr.com. Do not open public issues for security
 reports.
