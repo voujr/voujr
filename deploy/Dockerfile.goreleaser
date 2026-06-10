@@ -1,0 +1,7 @@
+# Runtime image for GoReleaser: it COPYs the prebuilt binary (GoReleaser builds
+# it) into a minimal distroless base. The multi-stage source build lives in
+# deploy/Dockerfile (used by `make docker`).
+FROM gcr.io/distroless/static:nonroot
+COPY voujr /usr/local/bin/voujr
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/voujr"]

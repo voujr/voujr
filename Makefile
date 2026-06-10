@@ -40,6 +40,18 @@ lint: ## Static analysis (requires golangci-lint)
 vet: ## go vet
 	go vet ./...
 
+.PHONY: vulncheck
+vulncheck: ## Scan for known vulnerabilities (requires govulncheck)
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+.PHONY: snapshot
+snapshot: ## Build a local release snapshot for the host (requires goreleaser)
+	goreleaser build --snapshot --clean --single-target
+
+.PHONY: release-check
+release-check: ## Validate the GoReleaser config
+	goreleaser check
+
 .PHONY: docker
 docker: ## Build the container image
 	docker build -t ghcr.io/voujr/$(BINARY):$(VERSION) -f deploy/Dockerfile .

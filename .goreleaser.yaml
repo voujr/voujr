@@ -1,0 +1,91 @@
+# GoReleaser config for voujr. Validate with `goreleaser check`; produce a local
+# snapshot with `goreleaser build --snapshot --clean --single-target`.
+version: 2
+
+project_name: voujr
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: voujr
+    main: ./cmd/voujr
+    binary: voujr
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: voujr
+    formats: ["tar.gz"]
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+# Software bill of materials per release archive (requires syft at release time).
+sboms:
+  - artifacts: archive
+
+nfpms:
+  - id: voujr
+    package_name: voujr
+    formats: ["deb", "rpm"]
+    maintainer: voujr maintainers <maintainers@voujr.example>
+    description: Terminal-native, AI-powered Kubernetes copilot
+    license: Apache-2.0
+    bindir: /usr/bin
+
+# Multi-arch image built and assembled into a manifest in one block (dockers_v2).
+dockers_v2:
+  - id: voujr
+    ids: [voujr]
+    images:
+      - "ghcr.io/voujr/voujr"
+    dockerfile: deploy/Dockerfile.goreleaser
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+
+# Keyless signing of the checksums file and the multi-arch manifest with cosign.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    artifacts: checksum
+    args:
+      - "sign-blob"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
+
+release:
+  github:
+    owner: voujr
+    name: voujr
+  prerelease: auto

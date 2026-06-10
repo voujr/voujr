@@ -1,0 +1,52 @@
+# Krew plugin manifest TEMPLATE, rendered by krew-release-bot on each GitHub
+# release (it fills in the per-platform download URIs + sha256 via addURIAndSha).
+# Installs voujr as `kubectl voujr`.
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: voujr
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/voujr/voujr
+  shortDescription: AI-powered Kubernetes copilot
+  description: |
+    voujr is a terminal-native, AI-powered Kubernetes copilot for cluster
+    operations, auditing, troubleshooting, optimization, and remediation.
+    Read-only by default; every mutation is gated by policy, RBAC preflight,
+    server dry-run, human approval, rollback snapshot, and a hash-chained
+    audit log.
+  caveats: |
+    Set an AI provider key (PORTKEY_API_KEY, or ANTHROPIC_API_KEY /
+    OPENAI_API_KEY / GEMINI_API_KEY) before use. `kubectl voujr audit`
+    needs no key.
+  platforms:
+    - selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+      {{addURIAndSha "https://github.com/voujr/voujr/releases/download/{{ .TagName }}/voujr_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
+      bin: voujr
+    - selector:
+        matchLabels:
+          os: linux
+          arch: arm64
+      {{addURIAndSha "https://github.com/voujr/voujr/releases/download/{{ .TagName }}/voujr_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
+      bin: voujr
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+      {{addURIAndSha "https://github.com/voujr/voujr/releases/download/{{ .TagName }}/voujr_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
+      bin: voujr
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+      {{addURIAndSha "https://github.com/voujr/voujr/releases/download/{{ .TagName }}/voujr_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
+      bin: voujr
+    - selector:
+        matchLabels:
+          os: windows
+          arch: amd64
+      {{addURIAndSha "https://github.com/voujr/voujr/releases/download/{{ .TagName }}/voujr_{{ .TagName }}_windows_amd64.zip" .TagName }}
+      bin: voujr.exe
