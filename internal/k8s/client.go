@@ -71,6 +71,13 @@ func Connect(name, kubeContext string, inCluster bool) (*Cluster, error) {
 	}, nil
 }
 
+// NewClusterWithClientset builds a Cluster around an already-constructed typed
+// clientset. Primarily for tests, where a fake clientset is injected; the
+// dynamic/metrics clients are left nil (read tools that use only Typed() work).
+func NewClusterWithClientset(name string, typed kubernetes.Interface) *Cluster {
+	return &Cluster{Name: name, typed: typed}
+}
+
 // Typed exposes the typed clientset for core/apps/batch reads.
 func (c *Cluster) Typed() kubernetes.Interface { return c.typed }
 

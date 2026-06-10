@@ -35,3 +35,9 @@ observability:
 incident:
   escalate_at_or_above: P1   # P0 | P1
   # slack_webhook / pagerduty_key are read from env, not stored here
+
+integrations:
+  # Operator-configured (never model-chosen) endpoints the tools talk to.
+  # When set, the prometheus_query tool is advertised to the agent.
+  # Also settable via the PROMETHEUS_URL env var.
+  prometheus_url: ""   # e.g. http://prometheus.monitoring:9090

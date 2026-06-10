@@ -34,11 +34,19 @@ type Config struct {
 	Mode    Mode   `yaml:"mode"`     // read-only | propose | apply
 	DataDir string `yaml:"data_dir"` // where the local DB + logs live
 
-	AI       AIConfig       `yaml:"ai"`
-	Audit    AuditConfig    `yaml:"audit"`
-	Tools    ToolsConfig    `yaml:"tools"`
-	Observe  ObserveConfig  `yaml:"observability"`
-	Incident IncidentConfig `yaml:"incident"`
+	AI           AIConfig           `yaml:"ai"`
+	Audit        AuditConfig        `yaml:"audit"`
+	Tools        ToolsConfig        `yaml:"tools"`
+	Observe      ObserveConfig      `yaml:"observability"`
+	Incident     IncidentConfig     `yaml:"incident"`
+	Integrations IntegrationsConfig `yaml:"integrations"`
+}
+
+// IntegrationsConfig holds endpoints for external observability/GitOps systems
+// the tools talk to. URLs are operator-configured (never model-chosen) to avoid
+// SSRF via prompt injection.
+type IntegrationsConfig struct {
+	PrometheusURL string `yaml:"prometheus_url"`
 }
 
 // AIConfig configures the orchestration layer.
@@ -164,6 +172,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("PORTKEY_BASE_URL"); v != "" {
 		cfg.AI.BaseURL = v
+	}
+	if v := os.Getenv("PROMETHEUS_URL"); v != "" {
+		cfg.Integrations.PrometheusURL = v
 	}
 }
 
