@@ -1,0 +1,17 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "voujr.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "voujr.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "voujr.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+{{- end }}

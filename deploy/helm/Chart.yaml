@@ -1,0 +1,15 @@
+apiVersion: v2
+name: voujr
+description: In-cluster continuous-audit controller for voujr — the AI-powered Kubernetes copilot
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - audit
+  - security
+  - cost
+  - reliability
+home: https://github.com/voujr/voujr
+sources:
+  - https://github.com/voujr/voujr

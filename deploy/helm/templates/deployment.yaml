@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "voujr.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "voujr.labels" . | nindent 4 }}
+spec:
+  # Replicas use leader election so exactly one owner runs the scan loop.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "voujr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "voujr.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "voujr.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        seccompProfile:
+          type: {{ .Values.securityContext.seccompProfile.type }}
+      containers:
+        - name: voujr
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "controller"
+            - "--in-cluster"
+            - "--interval"
+            - "{{ .Values.audit.interval }}"
+          ports:
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: VOUJR_METRICS_ADDR
+              value: ":9090"
+            - name: VOUJR_DATA_DIR
+              value: /data
+            {{- if .Values.incident.slack.existingSecret }}
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.incident.slack.existingSecret }}
+                  key: SLACK_WEBHOOK_URL
+                  optional: true
+            {{- end }}
+            {{- if and .Values.incident.pagerduty .Values.incident.pagerduty.existingSecret }}
+            - name: PAGERDUTY_ROUTING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.incident.pagerduty.existingSecret }}
+                  key: PAGERDUTY_ROUTING_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.dbEncryption.existingSecret }}
+            - name: VOUJR_DB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dbEncryption.existingSecret }}
+                  key: VOUJR_DB_KEY
+            {{- end }}
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop:
+                {{- toYaml .Values.securityContext.capabilities.drop | nindent 16 }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        # Local working state (SQLite). Point at a PVC, or use the Postgres store,
+        # for durable shared findings across replicas/restarts.
+        - name: data
+          emptyDir: {}

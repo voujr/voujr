@@ -180,6 +180,12 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("PROMETHEUS_URL"); v != "" {
 		cfg.Integrations.PrometheusURL = v
 	}
+	if v := os.Getenv("VOUJR_METRICS_ADDR"); v != "" {
+		cfg.Observe.MetricsAddr = v
+	}
+	if v := os.Getenv("VOUJR_DATA_DIR"); v != "" {
+		cfg.DataDir = v
+	}
 	if v := os.Getenv("SLACK_WEBHOOK_URL"); v != "" {
 		cfg.Incident.SlackWebhook = v
 	}
