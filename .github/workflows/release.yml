@@ -1,18 +1,29 @@
 name: Release
 
-# Publishes a release for any pushed v* tag (binaries, packages, signed
-# multi-arch images, SBOM). The day-to-day flow is automated by Release Please
-# (.github/workflows/release-please.yml); this is the manual escape hatch:
-#   git tag v1.2.3 && git push origin v1.2.3
-# If you tag manually, also bump .release-please-manifest.json to match.
+# Publishes a release for a v* tag (binaries, packages, signed multi-arch
+# images, SBOM). The day-to-day flow is automated by Release Please
+# (.github/workflows/release-please.yml). Use this directly to:
+#   - manually release a tag you pushed: git tag v1.2.3 && git push origin v1.2.3
+#   - backfill/re-publish binaries onto an EXISTING release: Actions → Release →
+#     "Run workflow" → enter the tag (e.g. v1.0.0).
+# (mode=keep-existing in .goreleaser.yaml means assets are added to the release.)
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish binaries for, e.g. v1.0.0
+        required: true
 
 permissions:
   contents: write # create the GitHub release
   packages: write # push images to GHCR
   id-token: write # cosign keyless signing (OIDC)
+
+# Run JS actions on Node.js 24 ahead of the June 2026 default switch.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   goreleaser:
@@ -21,6 +32,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      # On a manual run, point GoReleaser at the chosen existing tag.
+      - name: Pin GoReleaser to the chosen tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "GORELEASER_CURRENT_TAG=$TAG" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v5
         with:

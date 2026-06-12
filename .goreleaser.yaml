@@ -88,4 +88,7 @@ release:
   github:
     owner: voujr
     name: voujr
+  # Release Please creates the GitHub release first; add our binaries/packages to
+  # it (and keep its generated changelog) instead of trying to recreate it.
+  mode: keep-existing
   prerelease: auto
