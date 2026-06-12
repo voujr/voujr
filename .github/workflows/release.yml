@@ -1,11 +1,23 @@
 name: Release
 
+# Two ways to release — both end in a tagged GoReleaser run:
+#   1. One-click: Actions → Release → "Run workflow" → pick patch/minor/major.
+#      (or from a terminal: `gh workflow run release.yml -f bump=patch`)
+#      It computes the next semver tag, pushes it, and releases.
+#   2. Manual: push a tag yourself — `git tag v1.2.3 && git push origin v1.2.3`.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump from the latest tag
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
-  contents: write # create the GitHub release
+  contents: write # create the release + push the tag
   packages: write # push images to GHCR
   id-token: write # cosign keyless signing (OIDC)
 
@@ -15,11 +27,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # GoReleaser needs full history + tags
+          fetch-depth: 0 # full history + tags for version detection
+
+      # On a manual run, compute the next semver tag, push it, and tell
+      # GoReleaser to release it (GORELEASER_CURRENT_TAG). On a tag push this
+      # step is skipped and GoReleaser uses the pushed tag.
+      - name: Compute and push next tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          latest="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+          [ -z "$latest" ] && latest="v0.0.0"
+          ver="${latest#v}"; ver="${ver%%-*}"
+          IFS='.' read -r major minor patch <<< "$ver"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          newtag="v${major}.${minor}.${patch}"
+          echo "Releasing ${newtag} (previous: ${latest})"
+          git tag -a "$newtag" -m "$newtag"
+          git push origin "$newtag"
+          echo "GORELEASER_CURRENT_TAG=${newtag}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v5
         with:
-          go-version: stable # release binaries built with the latest patched Go
+          go-version: stable
 
       - uses: sigstore/cosign-installer@v3
       - uses: anchore/sbom-action/download-syft@v0
