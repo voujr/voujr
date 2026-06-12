@@ -46,68 +46,39 @@ These constrain every decision below.
 
 ### 1.1 Component view
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                                  OPERATOR                                       │
-│                              (terminal / TTY)                                   │
-└───────────────────────────────────┬────────────────────────────────────────────┘
-                                     │ keystrokes / streamed tokens
-                          ┌──────────▼───────────┐
-                          │   TUI  (Bubble Tea)   │  chat · tables · trees · logs
-                          │   internal/tui        │  progress · multi-pane · vim keys
-                          └──────────┬───────────┘
-                                     │ commands / events (Go channels)
-┌────────────────────────────────────▼───────────────────────────────────────────┐
-│                              AGENT RUNTIME                                        │
-│                              internal/agent                                       │
-│   ┌────────────┐   ┌──────────────┐   ┌───────────────┐   ┌──────────────────┐   │
-│   │  Planner   │──▶│  Reasoner    │──▶│ Tool dispatch │──▶│  Observation /    │   │
-│   │  (intent,  │   │  (LLM turn)  │   │ (validate +   │   │  result merge     │   │
-│   │  routing)  │◀──│              │◀──│  approve +    │◀──│  → next turn)     │   │
-│   └────────────┘   └──────┬───────┘   │  execute)     │   └──────────────────┘   │
-│                           │           └───────┬───────┘                          │
-└───────────────────────────┼───────────────────┼─────────────────────────────────┘
-            ┌───────────────┘                   │                  ┌───────────────┐
-            ▼                                    ▼                  ▼               │
-┌────────────────────┐        ┌─────────────────────────┐  ┌───────────────────┐   │
-│  AI ORCHESTRATION   │        │     TOOL REGISTRY        │  │  SESSION / MEMORY │   │
-│  internal/ai        │        │     internal/tools       │  │  internal/session │   │
-│  ┌───────────────┐  │        │  policy → approval →     │  │  short-term buffer│   │
-│  │ Model router  │  │        │  dry-run → exec → audit  │  │  long-term recall │   │
-│  │ cost/ctx/skill│  │        │  ┌────────┬───────────┐  │  │  summarization    │   │
-│  └──────┬────────┘  │        │  │kubectl │ helm      │  │  └─────────┬─────────┘   │
-│  ┌──────▼────────┐  │        │  │prom    │ argocd    │  │            │             │
-│  │ Portkey gw    │  │        │  │loki    │ terraform │  │            ▼             │
-│  │ failover/BYOK │  │        │  │grafana │ aws/gcp/az│  │   ┌─────────────────┐   │
-│  └──────┬────────┘  │        │  └────┬───┴─────┬─────┘  │   │  STORE (DB)      │   │
-└─────────┼───────────┘        └───────┼─────────┼────────┘   │  internal/store  │   │
-          │                            │         │            │  SQLite│Postgres │   │
-   ┌──────▼──────┐              ┌──────▼─────┐   │            └────────┬─────────┘   │
-   │ OpenAI       │             │ KUBERNETES │   │                     │             │
-   │ Anthropic    │             │ INTEGRATION│   │             sessions, messages,   │
-   │ Gemini       │             │ internal/k8s│  │             tool_exec, findings,  │
-   └─────────────┘              │ client-go   │  │             clusters, approvals,  │
-                                │ informers   │  │             ai_usage, audit_log   │
-                                │ multi-cluster│ │                                   │
-                                └──────┬──────┘  │                                   │
-                                       │         │                                   │
-                          ┌────────────▼─────────▼───────────┐                       │
-                          │          AUDIT ENGINE             │  rules → findings     │
-                          │          internal/audit          │  reliability/security │
-                          │  scheduled + on-demand scans      │  cost/optimization    │
-                          └────────────┬──────────────────────┘                       │
-                                       │ P0/P1                                         │
-                          ┌────────────▼──────────┐   ┌──────────────────────────────┐│
-                          │  INCIDENT / ALERTING   │   │  OBSERVABILITY                ││
-                          │  internal/incident     │   │  internal/observability       ││
-                          │  Slack · PagerDuty      │   │  Prometheus · OTel · logs     ││
-                          └────────────────────────┘   └──────────────────────────────┘│
-                                                                                        │
-              ┌─────────────────────────────────────────────────────────────────────────┘
-              ▼  targets (read-by-default; writes gated)
-   ┌──────────────────────────────────────────────────────────────────────────┐
-   │  Cluster A (EKS)   Cluster B (GKE)   Cluster C (AKS)   …   Prometheus/Loki │
-   └──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    operator([Operator · terminal / TTY])
+    tui["TUI · internal/tui<br/>chat · tables · trees · logs · progress · vim keys"]
+
+    subgraph runtime["Agent Runtime · internal/agent"]
+        direction LR
+        planner["Planner<br/>intent · routing"] --> reasoner["Reasoner<br/>LLM turn"]
+        reasoner --> dispatch["Tool dispatch<br/>validate · approve · execute"]
+        dispatch --> observe["Observation<br/>result merge"]
+        observe -. next turn .-> reasoner
+    end
+
+    ai["AI Orchestration · internal/ai<br/>model router → Portkey gw · failover · BYOK"]
+    providers["OpenAI · Anthropic · Gemini"]
+    registry["Tool Registry · internal/tools<br/>policy → approval → dry-run → exec → audit<br/>kubectl · helm · prom · loki · argocd · cloud"]
+    memory["Session / Memory · internal/session<br/>short-term buffer · long-term recall"]
+    store[("Store · internal/store<br/>SQLite or Postgres<br/>sessions · messages · tool_exec · findings · audit_log")]
+    k8s["Kubernetes · internal/k8s<br/>client-go · informers · multi-cluster"]
+    audit["Audit Engine · internal/audit<br/>scheduled + on-demand scans"]
+    incident["Incident · internal/incident<br/>Slack · PagerDuty"]
+    obs["Observability · internal/observability<br/>Prometheus · OTel · logs"]
+    targets[("Clusters EKS/GKE/AKS · Prometheus / Loki<br/>read-by-default; writes gated")]
+
+    operator <-->|keystrokes / tokens| tui
+    tui <-->|events| runtime
+    runtime --> ai --> providers
+    runtime --> registry
+    runtime --> memory --> store
+    registry --> k8s --> targets
+    registry --> audit --> store
+    audit -->|P0 / P1| incident
+    runtime -. metrics .-> obs
 ```
 
 ### 1.2 Deployment topologies
@@ -133,57 +104,20 @@ hard step/budget limits, and a human-in-the-loop gate on every mutation.
 
 ### 2.1 The loop
 
-```
-                    ┌──────────────────────────────────────────────┐
-   user message ──▶ │  1. CLASSIFY      intent, complexity, scope    │
-                    │     → route to a model tier (§5)               │
-                    └───────────────────┬──────────────────────────┘
-                                        ▼
-                    ┌──────────────────────────────────────────────┐
-                    │  2. ASSEMBLE      system prompt + cluster      │
-                    │     context snapshot + tool schemas +          │
-                    │     conversation window + recalled memory      │
-                    └───────────────────┬──────────────────────────┘
-                                        ▼
-          ┌────────────▶┌──────────────────────────────────────────┐
-          │             │  3. REASON    LLM turn (streamed)          │
-          │             │     emits: assistant text  AND/OR          │
-          │             │     one or more tool calls                 │
-          │             └───────────────┬──────────────────────────┘
-          │                             │ tool calls?
-          │                   ┌─────────┴─────────┐
-          │                  no                   yes
-          │                   │                     ▼
-          │                   │     ┌──────────────────────────────────┐
-          │                   │     │  4. VALIDATE   args vs JSON schema │
-          │                   │     │     + policy check (mutating?      │
-          │                   │     │     RBAC? blast radius?)           │
-          │                   │     └───────────────┬──────────────────┘
-          │                   │                     ▼
-          │                   │     ┌──────────────────────────────────┐
-          │                   │     │  5. APPROVE   if mutating:         │
-          │                   │     │     dry-run → diff → human y/N     │
-          │                   │     │     (auto-approved if --yes +      │
-          │                   │     │      policy allows)                │
-          │                   │     └───────────────┬──────────────────┘
-          │                   │                     ▼
-          │                   │     ┌──────────────────────────────────┐
-          │                   │     │  6. EXECUTE   run tool, capture    │
-          │                   │     │     result + snapshot for rollback │
-          │                   │     │     + append to audit log          │
-          │                   │     └───────────────┬──────────────────┘
-          │                   │                     ▼
-          │                   │     ┌──────────────────────────────────┐
-          │                   │     │  7. OBSERVE   feed tool result(s)  │
-          │                   └─────┤     back as a tool message; loop   │
-          │   step budget ok? ◀─────┤     until no tool calls or budget  │
-          └─────────────────────────┤     exhausted                      │
-                                    └───────────────┬──────────────────┘
-                                                    ▼
-                    ┌──────────────────────────────────────────────┐
-                    │  8. FINALIZE   stream final answer, persist    │
-                    │     turn, update long-term memory if salient   │
-                    └──────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    msg([user message]) --> classify["1. CLASSIFY<br/>intent · complexity · route to a model tier"]
+    classify --> assemble["2. ASSEMBLE<br/>system prompt + context snapshot + tool schemas<br/>+ conversation window + recalled memory"]
+    assemble --> reason["3. REASON<br/>LLM turn (streamed): assistant text and/or tool calls"]
+    reason --> q{"tool calls?"}
+    q -->|no| finalize["8. FINALIZE<br/>stream answer · persist turn · update long-term memory"]
+    q -->|yes| validate["4. VALIDATE<br/>args vs JSON schema + policy<br/>(mutating? RBAC? blast radius?)"]
+    validate --> approve["5. APPROVE (if mutating)<br/>dry-run → diff → human y/N"]
+    approve --> execute["6. EXECUTE<br/>run tool · snapshot for rollback · append audit log"]
+    execute --> observe["7. OBSERVE<br/>feed tool result(s) back as a tool message"]
+    observe --> q2{"step budget ok?"}
+    q2 -->|yes| reason
+    q2 -->|no| finalize
 ```
 
 ### 2.2 Guardrails baked into the loop
@@ -343,22 +277,20 @@ rendering (often trimmed/redacted) so big outputs don't blow the context window.
 
 Every tool call flows through a composable chain before the concrete handler runs:
 
-```
-ToolCall
-   │
-   ▼  schema-validate        reject malformed args from the model
-   ▼  allow-list             reject tools not enabled for this session
-   ▼  redact-inputs          strip anything secret-shaped from args
-   ▼  policy                 classify blast radius; deny disallowed mutations
-   ▼  rbac-preflight         SelfSubjectAccessReview: can the caller actually do this?
-   ▼  dry-run  (if mutating) server-side dry-run → compute diff
-   ▼  approval (if mutating) present diff to human; wait y/N (or auto per policy)
-   ▼  snapshot (if mutating) capture prior object state for rollback
-   ▼  execute                run the handler under a timeout
-   ▼  audit                  append {args, diff, approver, result, duration} to log
-   ▼  redact-output          strip secrets from result before it re-enters the prompt
-   ▼
-Result
+```mermaid
+flowchart TB
+    call([ToolCall]) --> v["schema-validate<br/>reject malformed args from the model"]
+    v --> a["allow-list<br/>reject tools not enabled for this session"]
+    a --> ri["redact-inputs<br/>strip anything secret-shaped from args"]
+    ri --> pol["policy<br/>classify blast radius; deny disallowed mutations"]
+    pol --> rbac["rbac-preflight<br/>SelfSubjectAccessReview: can the caller do this?"]
+    rbac --> dr["dry-run (if mutating)<br/>server-side dry-run → compute diff"]
+    dr --> ap["approval (if mutating)<br/>present diff to human; wait y/N (or auto per policy)"]
+    ap --> snap["snapshot (if mutating)<br/>capture prior object state for rollback"]
+    snap --> exec["execute<br/>run the handler under a timeout"]
+    exec --> au["audit<br/>append {args, diff, approver, result, duration}"]
+    au --> ro["redact-output<br/>strip secrets before result re-enters the prompt"]
+    ro --> result([Result])
 ```
 
 This is the single chokepoint where safety is enforced — there is no way to reach
@@ -421,19 +353,13 @@ balancing, caching, observability, and virtual keys for BYOK. We use it as the d
 `Provider` implementation so we get multi-provider + failover + cost tracking without
 maintaining N SDK integrations.
 
-```
-            ┌──────────────────────────────────────────────┐
-   agent ──▶│  ai.Router  →  Provider (Portkey adapter)      │
-            │                    │                            │
-            │              ┌─────▼──────┐  config-as-headers  │
-            │              │ Portkey GW │  x-portkey-config:  │
-            │              │            │  { strategy:fallback,│
-            │              │            │    targets:[…] }     │
-            │              └─────┬──────┘                     │
-            └────────────────────┼────────────────────────────┘
-                  ┌──────────────┼──────────────┐
-                  ▼              ▼               ▼
-              OpenAI        Anthropic         Gemini
+```mermaid
+flowchart TB
+    agent([agent]) --> router["ai.Router → Provider (Portkey adapter)"]
+    router -->|"x-portkey-config:<br/>{ strategy: fallback, targets: [...] }"| gw["Portkey Gateway"]
+    gw --> openai["OpenAI"]
+    gw --> anthropic["Anthropic"]
+    gw --> gemini["Gemini"]
 ```
 
 Portkey routing strategies are expressed as a *config* (sent as a header or referenced by
@@ -540,18 +466,15 @@ recent events (5m): 7× FailedScheduling(search), 4× Unhealthy(api-gateway)
 Two horizons, because LLM context windows are finite and conversations + cluster state are
 not.
 
-```
-   ┌────────────────────────────── SESSION ──────────────────────────────┐
-   │  id, user, cluster, mode(read/propose/apply), enabled tools, budget   │
-   │                                                                        │
-   │  SHORT-TERM (working memory)              LONG-TERM (durable memory)    │
-   │  ┌──────────────────────────┐            ┌───────────────────────────┐ │
-   │  │ rolling message window    │            │ salient facts & decisions  │ │
-   │  │ last N turns verbatim      │  promote   │ "api-gateway needs 90s     │ │
-   │  │ + running summary of older │ ─────────▶ │  startup", embeddings for  │ │
-   │  │   turns (auto-summarized)  │  recall    │  top-k semantic retrieval  │ │
-   │  └──────────────────────────┘ ◀───────── └───────────────────────────┘ │
-   └────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph session["SESSION (id · user · cluster · mode · enabled tools · budget)"]
+        direction LR
+        st["SHORT-TERM — working memory<br/>rolling window: last N turns verbatim<br/>+ running summary of older turns"]
+        lt["LONG-TERM — durable memory<br/>salient facts and decisions<br/>embeddings for top-k semantic recall"]
+        st -->|promote| lt
+        lt -->|recall| st
+    end
 ```
 
 - **Short-term.** The last *N* turns verbatim. When the window approaches the model's
@@ -573,64 +496,86 @@ Portable across SQLite (local) and Postgres (server). `pgvector` is used for emb
 Postgres; SQLite stores embeddings as a blob with brute-force cosine (fine at local
 scale). Full DDL lives in [`migrations/0001_init.sql`](../migrations/0001_init.sql).
 
-```
-┌────────────┐        ┌─────────────┐        ┌────────────────┐
-│  users      │        │  clusters    │        │  sessions       │
-├────────────┤        ├─────────────┤        ├────────────────┤
-│ id (PK)     │        │ id (PK)      │        │ id (PK)         │
-│ subject     │        │ name         │◀───────│ cluster_id (FK) │
-│ email       │        │ context      │        │ user_id (FK)    │─┐
-│ role        │        │ provider     │        │ mode            │ │
-│ created_at  │        │ endpoint_hash│        │ enabled_tools   │ │
-└─────┬──────┘        │ created_at   │        │ budget_cents    │ │
-      │               └─────────────┘        │ created_at      │ │
-      │                                       └───────┬────────┘ │
-      │   ┌───────────────────────────────────────────┘          │
-      │   ▼                                                       │
-      │ ┌────────────────┐     ┌──────────────────────┐          │
-      └▶│  messages       │     │  tool_executions      │          │
-        ├────────────────┤     ├──────────────────────┤          │
-        │ id (PK)         │     │ id (PK)               │          │
-        │ session_id (FK) │◀──┐ │ session_id (FK)       │          │
-        │ role            │   │ │ message_id (FK)       │          │
-        │ content         │   └─│ tool_name             │          │
-        │ tool_call_json  │     │ args_json             │          │
-        │ tokens_in/out   │     │ diff_json             │          │
-        │ created_at      │     │ risk                  │          │
-        └────────────────┘     │ approved_by           │          │
-                                │ dry_run (bool)        │          │
-        ┌────────────────┐     │ status                │          │
-        │  ai_usage       │     │ rollback_ref          │          │
-        ├────────────────┤     │ duration_ms           │          │
-        │ id (PK)         │     │ created_at            │          │
-        │ session_id (FK) │     └──────────┬───────────┘          │
-        │ provider/model  │                │                       │
-        │ tokens_in/out   │     ┌──────────▼───────────┐          │
-        │ cost_cents      │     │  audit_log (append)   │          │
-        │ route_reason    │     ├──────────────────────┤          │
-        │ created_at      │     │ id (PK) · hash_prev   │  tamper- │
-        └────────────────┘     │ actor · action · ts   │  evident │
-                                │ payload_json          │  chain   │
-        ┌────────────────────┐ └──────────────────────┘          │
-        │  audit_findings     │                                    │
-        ├────────────────────┤   ┌────────────────────┐           │
-        │ id (PK)             │   │  memories           │           │
-        │ cluster_id (FK)     │   ├────────────────────┤           │
-        │ category            │   │ id (PK)             │           │
-        │ rule_id             │   │ session_id (FK)     │◀──────────┘
-        │ severity (P0..P3)   │   │ kind                │
-        │ resource_ref        │   │ text                │
-        │ impact / root_cause │   │ embedding (vector)  │
-        │ remediation_json    │   │ created_at          │
-        │ autofixable (bool)  │   └────────────────────┘
-        │ status · first/last │
-        │ created_at          │   ┌────────────────────┐
-        └────────────────────┘   │  approvals          │
-                                  ├────────────────────┤
-                                  │ id · tool_exec_id   │
-                                  │ approver · decision │
-                                  │ reason · ts         │
-                                  └────────────────────┘
+```mermaid
+erDiagram
+    users ||--o{ sessions : has
+    clusters ||--o{ sessions : scopes
+    clusters ||--o{ audit_findings : scanned
+    sessions ||--o{ messages : contains
+    sessions ||--o{ tool_executions : records
+    sessions ||--o{ ai_usage : meters
+    sessions ||--o{ memories : remembers
+    messages ||--o{ tool_executions : triggers
+    tool_executions ||--o{ approvals : "approved by"
+
+    users {
+        text id PK
+        text subject
+        text role
+    }
+    clusters {
+        text id PK
+        text name
+        text context
+    }
+    sessions {
+        text id PK
+        text user_id FK
+        text cluster_id FK
+        text mode
+        int budget_cents
+    }
+    messages {
+        text id PK
+        text session_id FK
+        text role
+        text content
+    }
+    tool_executions {
+        text id PK
+        text session_id FK
+        text tool_name
+        text args_json
+        text diff_json
+        text risk
+        text approved_by
+        int dry_run
+        text status
+        text rollback_ref
+    }
+    audit_log {
+        bigint id PK
+        text actor
+        text payload_json
+        text hash_prev
+        text hash_curr
+    }
+    audit_findings {
+        text id PK
+        text cluster_id FK
+        text dedup_key
+        text severity
+        int autofixable
+        text status
+    }
+    ai_usage {
+        text id PK
+        text session_id FK
+        text model
+        real cost_cents
+    }
+    memories {
+        text id PK
+        text session_id FK
+        text kind
+        blob embedding
+    }
+    approvals {
+        text id PK
+        text tool_exec_id FK
+        text approver
+        text decision
+    }
 ```
 
 Key points:
@@ -666,9 +611,11 @@ secret may reach a model or a log.*
 
 ### 9.2 Secret handling pipeline
 
-```
-cluster/cloud  ──▶  tool result  ──▶  redact.Scrub()  ──▶  { store full (encrypted) }
-                                                        └▶  { model-facing: redacted }
+```mermaid
+flowchart LR
+    src["cluster / cloud"] --> tr["tool result"] --> scrub["redact.Scrub()"]
+    scrub --> stored["store full (encrypted at rest)"]
+    scrub --> model["model-facing: redacted"]
 ```
 
 Secrets are encrypted at rest (SQLCipher / Postgres TDE or app-level envelope encryption).
@@ -727,21 +674,12 @@ isn't allowed to approve their own action. SSO (OIDC) maps IdP groups → intern
 
 ## 11. Multi-cluster support design
 
-```
-                 ┌──────────────────────────────────────────────┐
-                 │            Cluster Registry                    │
-                 │            internal/k8s/multicluster.go        │
-                 │  name → { kubeconfig ctx | in-cluster SA |     │
-                 │           OIDC/EKS/GKE/AKS auth }, clientset,  │
-                 │           dynamic, discovery, informer cache,  │
-                 │           RBAC profile, health                 │
-                 └───────────────┬───────────────┬───────────────┘
-            ┌────────────────────┘               └────────────────────┐
-            ▼                                                          ▼
-   ┌──────────────┐      ┌──────────────┐                  ┌──────────────┐
-   │ prod-eks      │      │ stage-gke     │        …         │ dr-aks        │
-   │ viewer+oper   │      │ viewer        │                  │ viewer        │
-   └──────────────┘      └──────────────┘                  └──────────────┘
+```mermaid
+flowchart TB
+    registry["Cluster Registry · internal/k8s/multicluster.go<br/>name → { kubeconfig ctx / in-cluster SA / OIDC · EKS · GKE · AKS auth }<br/>clientset · dynamic · discovery · informer cache · RBAC profile · health"]
+    registry --> prod["prod-eks<br/>viewer + operator"]
+    registry --> stage["stage-gke<br/>viewer"]
+    registry --> dr["dr-aks<br/>viewer"]
 ```
 
 - **Registry.** Each cluster is registered with its auth method, lazily-built clients, an
