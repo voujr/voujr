@@ -118,7 +118,7 @@ func (a *Agent) streamTurn(ctx context.Context, req ai.Request, emit Emit, final
 	if err != nil {
 		return ai.Message{}, ai.Usage{}, err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	msg := ai.Message{Role: ai.RoleAssistant}
 	var usage ai.Usage

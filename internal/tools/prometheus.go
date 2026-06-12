@@ -68,7 +68,7 @@ func (p PrometheusQuery) Execute(ctx context.Context, args RawArgs, _ bool) (Res
 	if err != nil {
 		return Result{}, fmt.Errorf("prometheus: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var out struct {
 		Status string `json:"status"`

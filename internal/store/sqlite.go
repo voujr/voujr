@@ -253,7 +253,7 @@ func (s *SQLite) ListSessions(ctx context.Context, limit int) ([]SessionSummary,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SessionSummary
 	for rows.Next() {
@@ -294,7 +294,7 @@ func (s *SQLite) LoadMessages(ctx context.Context, sessionID string) ([]ai.Messa
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []ai.Message
 	for rows.Next() {
@@ -355,7 +355,7 @@ func (s *SQLite) RecallMemories(ctx context.Context, sessionID string, query []f
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type scored struct {
 		m     session.Memory
@@ -501,7 +501,7 @@ func (s *SQLite) VerifyAuditChain(ctx context.Context) (brokenAt int64, err erro
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	prev := ""
 	for rows.Next() {

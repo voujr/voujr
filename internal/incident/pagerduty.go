@@ -48,7 +48,7 @@ func (n *Notifier) triggerPagerDuty(ctx context.Context, f audit.Finding) error 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("pagerduty status %d", resp.StatusCode)
 	}

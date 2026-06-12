@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable # release binaries built with the latest patched Go
 
       - uses: sigstore/cosign-installer@v3
       - uses: anchore/sbom-action/download-syft@v0

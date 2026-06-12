@@ -223,7 +223,7 @@ func (p *Postgres) ListSessions(ctx context.Context, limit int) ([]SessionSummar
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SessionSummary
 	for rows.Next() {
@@ -261,7 +261,7 @@ func (p *Postgres) LoadMessages(ctx context.Context, sessionID string) ([]ai.Mes
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []ai.Message
 	for rows.Next() {
@@ -310,7 +310,7 @@ func (p *Postgres) RecallMemories(ctx context.Context, sessionID string, query [
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type scored struct {
 		m     session.Memory
@@ -434,7 +434,7 @@ func (p *Postgres) VerifyAuditChain(ctx context.Context) (brokenAt int64, err er
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	prev := ""
 	for rows.Next() {

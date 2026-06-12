@@ -199,7 +199,7 @@ func (p *Portkey) Chat(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, fmt.Errorf("portkey: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
 		return Response{}, fmt.Errorf("portkey status %d: %s", resp.StatusCode, b)
@@ -262,7 +262,7 @@ func (p *Portkey) Stream(ctx context.Context, req Request) (Stream, error) {
 	}
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("portkey status %d: %s", resp.StatusCode, b)
 	}
 	return &sseStream{r: bufio.NewReader(resp.Body), c: resp.Body}, nil
@@ -295,7 +295,7 @@ func (p *Portkey) Embed(ctx context.Context, inputs []string) ([][]float32, erro
 	if err != nil {
 		return nil, fmt.Errorf("portkey embeddings: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("portkey embeddings status %d: %s", resp.StatusCode, b)
