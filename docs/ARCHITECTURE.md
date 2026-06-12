@@ -849,4 +849,3 @@ for enterprise BYOK/procurement reality.
   `Store` interface; SQLite for CLI, Postgres for controller.*
 - **Heuristic vs. LLM routing classifier.** Heuristics are free and predictable but
   coarse. *Chosen: heuristic first, optional tiny-model refinement when ambiguous.*
-```
