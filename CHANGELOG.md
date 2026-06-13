@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/voujr/voujr/compare/v1.0.0...v1.1.0) (2026-06-12)
+
+
+### Features
+
+* **cmd:** add the voujr CLI entrypoint and command wiring ([4bf14f5](https://github.com/voujr/voujr/commit/4bf14f57ee469bb6d750b6d6724ae789fad6f38e))
+
+
+### Bug Fixes
+
+* track cmd/voujr, the CLI entrypoint hidden by .gitignore ([4916ef5](https://github.com/voujr/voujr/commit/4916ef53defe986f70ec432db5988d5b2e962b80))
+
 ## 1.0.0 (2026-06-12)
 
 
