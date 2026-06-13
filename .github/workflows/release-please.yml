@@ -5,8 +5,13 @@ name: Release Please
 #      maintains CHANGELOG.md and computes the next version from your commits
 #      (fix -> patch, feat -> minor, feat!/BREAKING CHANGE -> major; pre-1.0 it
 #      keeps breaking changes at minor).
-#   2. When you MERGE that PR, Release Please cuts the tag + GitHub release, and
-#      the goreleaser job below publishes binaries, packages, signed images, SBOM.
+#   2. When you MERGE that PR, Release Please cuts the tag + GitHub release.
+#   3. The tag (pushed with a PAT, so it CAN trigger other workflows) fires
+#      release.yml, which builds and attaches the binaries/packages/images.
+#
+# RELEASE_PLEASE_TOKEN is a PAT (Contents + Pull requests: read & write). It is
+# required: the built-in GITHUB_TOKEN can neither trigger CI on the release PR
+# nor trigger release.yml from the tag it creates.
 on:
   push:
     branches: [main]
@@ -23,52 +28,9 @@ env:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    outputs:
-      # Manifest mode emits per-path outputs keyed by the package path (".").
-      release_created: ${{ steps.release.outputs['.--release_created'] }}
-      tag_name: ${{ steps.release.outputs['.--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
-        id: release
         with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-  # Release Please cuts the tag/release with the default GITHUB_TOKEN, which
-  # can't trigger release.yml's `push: tags`, so we publish here in the same
-  # workflow when a release was actually created.
-  goreleaser:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.release-please.outputs.tag_name }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - uses: sigstore/cosign-installer@v3
-      - uses: anchore/sbom-action/download-syft@v0
-
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
